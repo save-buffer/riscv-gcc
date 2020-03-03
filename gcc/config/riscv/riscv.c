@@ -299,6 +299,18 @@ static const struct riscv_tune_info sifive_7_tune_info = {
   true,						/* slow_unaligned_access */
 };
 
+static const struct riscv_tune_info bsg_vanilla_tune_info = {
+  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_add */
+  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_mul */
+  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_div */
+  {COSTS_N_INSNS (20), COSTS_N_INSNS (20)},	/* int_mul */
+  {COSTS_N_INSNS (20), COSTS_N_INSNS (20)},	/* int_div */
+  4,						/* issue_rate */
+  4,						/* branch_cost */
+  50,						/* memory_cost */
+  true,						/* slow_unaligned_access */
+};
+
 /* Costs to use when optimizing for size.  */
 static const struct riscv_tune_info optimize_size_tune_info = {
   {COSTS_N_INSNS (1), COSTS_N_INSNS (1)},	/* fp_add */
@@ -339,6 +351,7 @@ static const struct riscv_cpu_info riscv_cpu_info_table[] = {
   { "sifive-3-series", generic, &rocket_tune_info },
   { "sifive-5-series", generic, &rocket_tune_info },
   { "sifive-7-series", sifive_7, &sifive_7_tune_info },
+  { "bsg_vanilla", bsg_vanilla, &bsg_vanilla_tune_info },
   { "size", generic, &optimize_size_tune_info },
 };
 

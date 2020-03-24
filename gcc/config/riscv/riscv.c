@@ -300,14 +300,14 @@ static const struct riscv_tune_info sifive_7_tune_info = {
 };
 
 static const struct riscv_tune_info bsg_vanilla_tune_info = {
-  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_add */
-  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_mul */
-  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* fp_div */
-  {COSTS_N_INSNS (20), COSTS_N_INSNS (20)},	/* int_mul */
-  {COSTS_N_INSNS (20), COSTS_N_INSNS (20)},	/* int_div */
+  {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_add */
+  {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_mul */
+  {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_div */
+  {COSTS_N_INSNS (1000), COSTS_N_INSNS (1000)},	/* int_mul */
+  {COSTS_N_INSNS (1000), COSTS_N_INSNS (1000)},	/* int_div */
   4,						/* issue_rate */
-  4,						/* branch_cost */
-  50,						/* memory_cost */
+  2,						/* branch_cost */
+  3,						/* memory_cost */
   true,						/* slow_unaligned_access */
 };
 
@@ -1754,6 +1754,7 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 	*total = COSTS_N_INSNS (1);
       else
 	*total = tune_info->int_mul[mode == DImode];
+      printf("BORK\n");
       return false;
 
     case DIV:

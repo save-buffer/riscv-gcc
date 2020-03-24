@@ -35,7 +35,7 @@
 (define_insn_reservation "bsg_vanilla_imul" 32
   (and (eq_attr "tune" "bsg_vanilla")
        (eq_attr "type" "imul,idiv"))
-  "bsg_vanilla_mul_div")
+  "bsg_vanilla_mul_div*32")
 
 (define_insn_reservation "bsg_vanilla_fpu" 3
   (and (eq_attr "tune" "bsg_vanilla")

@@ -55,6 +55,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic.h"
 #include "builtins.h"
 #include "predict.h"
+#include "print-tree.h"
+#include "print-rtl.h"
 
 /* True if X is an UNSPEC wrapper around a SYMBOL_REF or LABEL_REF.  */
 #define UNSPEC_ADDRESS_P(X)					\
@@ -303,9 +305,9 @@ static const struct riscv_tune_info bsg_vanilla_tune_info = {
   {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_add */
   {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_mul */
   {COSTS_N_INSNS (3), COSTS_N_INSNS (3)},	/* fp_div */
-  {COSTS_N_INSNS (1000), COSTS_N_INSNS (1000)},	/* int_mul */
-  {COSTS_N_INSNS (1000), COSTS_N_INSNS (1000)},	/* int_div */
-  4,						/* issue_rate */
+  {COSTS_N_INSNS (32), COSTS_N_INSNS (32)},	/* int_mul */
+  {COSTS_N_INSNS (32), COSTS_N_INSNS (32)},	/* int_div */
+  1,						/* issue_rate */
   2,						/* branch_cost */
   3,						/* memory_cost */
   true,						/* slow_unaligned_access */
@@ -326,6 +328,8 @@ static const struct riscv_tune_info optimize_size_tune_info = {
 
 static tree riscv_handle_fndecl_attribute (tree *, tree, tree, int, bool *);
 static tree riscv_handle_type_attribute (tree *, tree, tree, int, bool *);
+static tree riscv_handle_remote_attribute (tree *, tree, tree, int, bool *);
+static int riscv_bsg_vanilla_compute_remote_cost(rtx, machine_mode);
 
 /* Defining target-specific uses of __attribute__.  */
 static const struct attribute_spec riscv_attribute_table[] =
@@ -340,6 +344,9 @@ static const struct attribute_spec riscv_attribute_table[] =
   /* This attribute generates prologue/epilogue for interrupt handlers.  */
   { "interrupt", 0, 1, false, true, true, false,
     riscv_handle_type_attribute, NULL },
+  /* Used for specifying that a load is going to be long-latency */
+  { "remote", 1, 1, true, false, false, true,
+    riscv_handle_remote_attribute, NULL },
 
   /* The last attribute spec is set to be NULL.  */
   { NULL,	0,  0, false, false, false, false, NULL, NULL }
@@ -1624,9 +1631,15 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
       if ((cost = riscv_address_insns (XEXP (x, 0), mode, true)) > 0)
 	{
 	  *total = COSTS_N_INSNS (cost + tune_info->memory_cost);
+	  if (riscv_microarchitecture == bsg_vanilla)
+            {
+              int extra_cost = riscv_bsg_vanilla_compute_remote_cost(XEXP(x, 0), mode);
+	      *total += COSTS_N_INSNS(extra_cost);
+            }
 	  return true;
 	}
       /* Otherwise use the default handling.  */
+      fprintf(stderr, "Using defualt handling\n");
       return false;
 
     case NOT:
@@ -1754,7 +1767,6 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 	*total = COSTS_N_INSNS (1);
       else
 	*total = tune_info->int_mul[mode == DImode];
-      printf("BORK\n");
       return false;
 
     case DIV:
@@ -2894,6 +2906,89 @@ riscv_handle_type_attribute (tree *node ATTRIBUTE_UNUSED, tree name, tree args,
     }
 
   return NULL_TREE;
+}
+
+static tree
+riscv_handle_remote_attribute (tree *node, tree name, tree args, int flags ATTRIBUTE_UNUSED, bool *no_add_attrs)
+{
+
+  if(is_attribute_p("remote", name))
+    {
+      if(riscv_microarchitecture != bsg_vanilla)
+        {
+          warning(OPT_Wattributes,
+		  "%qE attribute only applies to the bsg_vanilla architecture. Please pass -mtune=bsg_vanilla",
+		  name);
+	  
+	  *no_add_attrs = true;
+	  return NULL_TREE;
+        }
+      if((TREE_CODE(*node) != VAR_DECL
+	  && TREE_CODE(*node) != PARM_DECL
+	  && TREE_CODE(*node) != FIELD_DECL)
+	 || TREE_CODE(TREE_TYPE(*node)) != POINTER_TYPE)
+        {
+          warning(OPT_Wattributes,
+		  "%qE attribute only applies to declarations with pointer types.",
+		  name);
+	  print_node (stderr, "\nnode:", *node, 0, false);
+	  print_node (stderr, "\ntype:", TREE_TYPE(*node), 0, false);
+	  *no_add_attrs = true;
+	  return NULL_TREE;
+        }
+      if(!args)
+        {
+          warning(OPT_Wattributes,
+		  "%qE attribute requires one argument",
+		  name);
+	  *no_add_attrs = true;
+	  return NULL_TREE;
+        }
+        tree cst = TREE_VALUE(args);
+        if(TREE_CODE(cst) != INTEGER_CST)
+          {
+             warning(OPT_Wattributes,
+		     "%qE attribute requires an integer argument",
+		     name);
+	     *no_add_attrs = true;
+	     return NULL_TREE;
+	  }
+	*no_add_attrs = false;
+    }
+  return NULL_TREE;
+}
+
+static int
+riscv_bsg_vanilla_compute_remote_cost(rtx x, machine_mode mode)
+{
+  struct riscv_address_info addr;
+  if(!riscv_classify_address (&addr, x, mode, false))
+      return 0; // We don't know
+  if(addr.type == ADDRESS_CONST_INT)
+    return 0;
+  //fprintf(stderr, "\n");
+  //print_rtl(stderr, x);
+  tree decl = MEM_EXPR (addr.reg);
+  if(decl == NULL_TREE)
+    return 0;
+  //fprintf(stderr, "\nname: %s\n", IDENTIFIER_POINTER(DECL_NAME(decl)));
+  //print_node (stderr, "\ndecl:", decl, 0, false);
+  
+  tree attributes = DECL_ATTRIBUTES(decl);
+  if(attributes == NULL_TREE)
+      return 0;
+  
+  //fprintf(stderr, "Have attributes!\n");
+  //print_node (stderr, "\nattributes:", attributes, 0, false);
+  tree attr = lookup_attribute("remote", attributes);
+  if(attr == NULL_TREE)
+    return 0;
+  //print_node (stderr, "\nattr:", attr, 0, false);
+  
+  tree cst = TREE_VALUE(TREE_VALUE(attr));
+  int hops = TREE_INT_CST_ELT (cst, 0);
+  fprintf(stderr, "BORKBORKBORK\n");
+  return hops;
 }
 
 /* Return true if function TYPE is an interrupt function.  */

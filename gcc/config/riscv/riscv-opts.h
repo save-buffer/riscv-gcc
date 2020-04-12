@@ -44,6 +44,7 @@ enum riscv_microarchitecture_type {
   generic,
   sifive_7,
   bsg_vanilla,
+  bsg_blackparrot
 };
 extern enum riscv_microarchitecture_type riscv_microarchitecture;
 

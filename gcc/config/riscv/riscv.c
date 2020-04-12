@@ -313,6 +313,18 @@ static const struct riscv_tune_info bsg_vanilla_tune_info = {
   true,						/* slow_unaligned_access */
 };
 
+static const struct riscv_tune_info bsg_blackparrot_tune_info = {
+  {COSTS_N_INSNS (5), COSTS_N_INSNS (5)},	/* fp_add */
+  {COSTS_N_INSNS (5), COSTS_N_INSNS (5)},	/* fp_mul */
+  {COSTS_N_INSNS (5), COSTS_N_INSNS (5)},	/* fp_div */
+  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* int_mul */
+  {COSTS_N_INSNS (4), COSTS_N_INSNS (4)},	/* int_div */
+  1,						/* issue_rate */
+  2,						/* branch_cost */
+  3,						/* memory_cost */
+  true,						/* slow_unaligned_access */
+};
+
 /* Costs to use when optimizing for size.  */
 static const struct riscv_tune_info optimize_size_tune_info = {
   {COSTS_N_INSNS (1), COSTS_N_INSNS (1)},	/* fp_add */
@@ -359,6 +371,7 @@ static const struct riscv_cpu_info riscv_cpu_info_table[] = {
   { "sifive-5-series", generic, &rocket_tune_info },
   { "sifive-7-series", sifive_7, &sifive_7_tune_info },
   { "bsg_vanilla", bsg_vanilla, &bsg_vanilla_tune_info },
+  { "bsg_blackparrot", bsg_blackparrot, &bsg_blackparrot_tune_info },
   { "size", generic, &optimize_size_tune_info },
 };
 
@@ -1639,7 +1652,7 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 	  return true;
 	}
       /* Otherwise use the default handling.  */
-      fprintf(stderr, "Using defualt handling\n");
+      fprintf(stderr, "Using default handling\n");
       return false;
 
     case NOT:

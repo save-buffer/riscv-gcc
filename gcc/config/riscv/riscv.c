@@ -55,6 +55,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "diagnostic.h"
 #include "builtins.h"
 #include "predict.h"
+#include "tree-ssa-operands.h"
 #include "print-tree.h"
 #include "print-rtl.h"
 
@@ -341,7 +342,7 @@ static const struct riscv_tune_info optimize_size_tune_info = {
 static tree riscv_handle_fndecl_attribute (tree *, tree, tree, int, bool *);
 static tree riscv_handle_type_attribute (tree *, tree, tree, int, bool *);
 static tree riscv_handle_remote_attribute (tree *, tree, tree, int, bool *);
-static int riscv_bsg_vanilla_compute_remote_cost(rtx, machine_mode);
+static int riscv_bsg_vanilla_compute_remote_cost(rtx);
 
 /* Defining target-specific uses of __attribute__.  */
 static const struct attribute_spec riscv_attribute_table[] =
@@ -1637,7 +1638,6 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
       else /* The instruction will be fetched from the constant pool.  */
 	*total = COSTS_N_INSNS (riscv_symbol_insns (SYMBOL_ABSOLUTE));
       return true;
-
     case MEM:
       /* If the address is legitimate, return the number of
 	 instructions it needs.  */
@@ -1646,13 +1646,15 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 	  *total = COSTS_N_INSNS (cost + tune_info->memory_cost);
 	  if (riscv_microarchitecture == bsg_vanilla)
             {
-              int extra_cost = riscv_bsg_vanilla_compute_remote_cost(XEXP(x, 0), mode);
-	      *total += COSTS_N_INSNS(extra_cost);
+              int hops = riscv_bsg_vanilla_compute_remote_cost(XEXP(x, 0));
+	      fprintf(stderr, "Adjusting cost from %d to %d.\n", *total, *total + COSTS_N_INSNS(hops));
+	      *total += COSTS_N_INSNS(hops);
             }
-	  return true;
+	  //fprintf(stderr, "RETURNING COST %d\n", *total);
+	  return false;
 	}
       /* Otherwise use the default handling.  */
-      fprintf(stderr, "Using default handling\n");
+      //fprintf(stderr, "Using default handling\n");
       return false;
 
     case NOT:
@@ -1829,7 +1831,7 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 		+ set_src_cost (XEXP (x, 1), mode, speed)
 		+ set_src_cost (XEXP (x, 2), mode, speed));
       return true;
-
+      
     case UNSPEC:
       if (XINT (x, 1) == UNSPEC_AUIPC)
 	{
@@ -2972,36 +2974,75 @@ riscv_handle_remote_attribute (tree *node, tree name, tree args, int flags ATTRI
 }
 
 static int
-riscv_bsg_vanilla_compute_remote_cost(rtx x, machine_mode mode)
+riscv_bsg_vanilla_compute_hops_from_mem_regs(rtx x)
 {
+  if(riscv_microarchitecture != bsg_vanilla || GET_CODE (x) != MEM)
+    return 0;
+  
   struct riscv_address_info addr;
-  if(!riscv_classify_address (&addr, x, mode, false))
+  if(!riscv_classify_address (&addr, x, GET_MODE (x), false))
       return 0; // We don't know
   if(addr.type == ADDRESS_CONST_INT)
     return 0;
-  //fprintf(stderr, "\n");
-  //print_rtl(stderr, x);
-  tree decl = MEM_EXPR (addr.reg);
+  
+  tree decl = REG_EXPR (addr.reg);
   if(decl == NULL_TREE)
     return 0;
-  //fprintf(stderr, "\nname: %s\n", IDENTIFIER_POINTER(DECL_NAME(decl)));
-  //print_node (stderr, "\ndecl:", decl, 0, false);
   
   tree attributes = DECL_ATTRIBUTES(decl);
   if(attributes == NULL_TREE)
       return 0;
   
-  //fprintf(stderr, "Have attributes!\n");
-  //print_node (stderr, "\nattributes:", attributes, 0, false);
   tree attr = lookup_attribute("remote", attributes);
   if(attr == NULL_TREE)
     return 0;
-  //print_node (stderr, "\nattr:", attr, 0, false);
   
   tree cst = TREE_VALUE(TREE_VALUE(attr));
   int hops = TREE_INT_CST_ELT (cst, 0);
-  fprintf(stderr, "BORKBORKBORK\n");
   return hops;
+}
+
+static int
+riscv_bsg_vanilla_compute_hops_from_mem(rtx x)
+{
+  if (riscv_microarchitecture != bsg_vanilla || GET_CODE (x) != MEM)
+    return 0;
+   tree ref = MEM_EXPR (x);
+  if (ref == NULL_TREE)
+    return 0;
+
+  if (TREE_CODE (ref) != MEM_REF)
+    return 0;
+
+  tree ssa = TREE_OPERAND (ref, 0);
+  if (ssa == NULL_TREE)
+    return 0;
+
+  tree decl = SSA_NAME_VAR (ssa);
+  if (decl == NULL_TREE)
+    return 0;
+  
+  tree attributes = DECL_ATTRIBUTES (decl);
+  if (attributes == NULL_TREE)
+    return 0;
+  
+  tree attr = lookup_attribute ("remote", attributes);
+  if(attr == NULL_TREE)
+    return 0;
+  
+  tree cst = TREE_VALUE(TREE_VALUE(attr));
+  int hops = TREE_INT_CST_ELT (cst, 0);
+  return hops;
+}
+
+static int
+riscv_bsg_vanilla_compute_remote_cost(rtx x)
+{
+  if(riscv_microarchitecture != bsg_vanilla)
+    return 0;
+  if(int hops = riscv_bsg_vanilla_compute_hops_from_mem(x))
+    return hops;
+  return riscv_bsg_vanilla_compute_hops_from_mem_regs(x);
 }
 
 /* Return true if function TYPE is an interrupt function.  */
@@ -5055,6 +5096,39 @@ riscv_promote_function_mode (const_tree type ATTRIBUTE_UNUSED,
   return mode;
 }
 
+int riscv_schedule_adjust_priority (rtx_insn *i, int priority)
+{
+  if (riscv_microarchitecture != bsg_vanilla)
+    return priority;
+
+  rtx x = PATTERN (i);
+  if (GET_CODE (x) != SET)
+    return priority;
+
+  if (GET_CODE (XEXP (x, 0)) != MEM
+      && GET_CODE (XEXP (x, 1)) != MEM)
+    return priority;
+
+  int hops = riscv_bsg_vanilla_compute_remote_cost(x);
+  return priority + 100 + hops;
+#if 0
+  rtx x = PATTERN (i);
+  if (GET_CODE (x) != SET)
+    return priority;
+  
+  if (GET_CODE (XEXP (x, 0)) == MEM)
+    x = XEXP (x, 0);
+  else if(GET_CODE (XEXP (x, 1)) == MEM)
+    x = XEXP (x, 1);
+  else
+    return priority;
+
+  int hops = riscv_bsg_vanilla_compute_remote_cost(x);
+  fprintf(stderr, "Adjusted priority from %d to %d.\n", priority, priority + hops);
+  return priority + hops;
+#endif
+}
+
 /* Initialize the GCC target structure.  */
 #undef TARGET_ASM_ALIGNED_HI_OP
 #define TARGET_ASM_ALIGNED_HI_OP "\t.half\t"
@@ -5071,6 +5145,9 @@ riscv_promote_function_mode (const_tree type ATTRIBUTE_UNUSED,
 
 #undef TARGET_SCHED_ISSUE_RATE
 #define TARGET_SCHED_ISSUE_RATE riscv_issue_rate
+
+#undef TARGET_SCHED_ADJUST_PRIORITY
+#define TARGET_SCHED_ADJUST_PRIORITY riscv_schedule_adjust_priority
 
 #undef TARGET_FUNCTION_OK_FOR_SIBCALL
 #define TARGET_FUNCTION_OK_FOR_SIBCALL riscv_function_ok_for_sibcall

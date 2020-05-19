@@ -5101,6 +5101,7 @@ int riscv_schedule_adjust_priority (rtx_insn *i, int priority)
   if (riscv_microarchitecture != bsg_vanilla)
     return priority;
 
+#if 0
   rtx x = PATTERN (i);
   if (GET_CODE (x) != SET)
     return priority;
@@ -5111,7 +5112,7 @@ int riscv_schedule_adjust_priority (rtx_insn *i, int priority)
 
   int hops = riscv_bsg_vanilla_compute_remote_cost(x);
   return priority + 100 + hops;
-#if 0
+#else
   rtx x = PATTERN (i);
   if (GET_CODE (x) != SET)
     return priority;

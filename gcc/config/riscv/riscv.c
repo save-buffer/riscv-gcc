@@ -1646,7 +1646,7 @@ riscv_rtx_costs (rtx x, machine_mode mode, int outer_code, int opno ATTRIBUTE_UN
 	  *total = COSTS_N_INSNS (cost + tune_info->memory_cost);
 	  if (riscv_microarchitecture == bsg_vanilla)
             {
-              int hops = riscv_bsg_vanilla_compute_remote_cost(XEXP(x, 0));
+              int hops = riscv_bsg_vanilla_compute_remote_cost(x);
 	      fprintf(stderr, "Adjusting cost from %d to %d.\n", *total, *total + COSTS_N_INSNS(hops));
 	      *total += COSTS_N_INSNS(hops);
             }
@@ -3007,7 +3007,7 @@ riscv_bsg_vanilla_compute_hops_from_mem(rtx x)
 {
   if (riscv_microarchitecture != bsg_vanilla || GET_CODE (x) != MEM)
     return 0;
-   tree ref = MEM_EXPR (x);
+  tree ref = MEM_EXPR (x);
   if (ref == NULL_TREE)
     return 0;
 
